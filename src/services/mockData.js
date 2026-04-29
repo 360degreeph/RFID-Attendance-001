@@ -20,6 +20,17 @@ export const RFID_MOCK_DATA = [
     section: 'BS-ARCH 3B',
     teacher_name: 'Ar. Julian Reyes',
     teacher_email: 'j.reyes@university.edu'
+  },
+  {
+    rfid: '12345',
+    name: 'Test Student',
+    email: 'test@example.com',
+    id_number: 'S-001',
+    photo: '',
+    department: 'Testing',
+    section: 'A',
+    teacher_name: 'Mr. Smith',
+    teacher_email: 'smith@example.com'
   }
 ];
 
