@@ -1,0 +1,5 @@
+{
+  "appId": "com.sentinel.rfid",
+  "appName": "RFID Sentinel",
+  "webDir": "dist"
+}

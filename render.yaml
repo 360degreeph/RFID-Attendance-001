@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: rfid-sentinel-api
+    env: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: GOOGLE_SERVICE_ACCOUNT_EMAIL
+        sync: false # You will set this in the Render Dashboard
+      - key: GOOGLE_PRIVATE_KEY
+        sync: false # You will set this in the Render Dashboard
+      - key: GOOGLE_SHEET_ID
+        sync: false # You will set this in the Render Dashboard
+      - key: PORT
+        value: 3001
