@@ -31,12 +31,32 @@ async function initSheet() {
   }
 }
 
-// Routes
-app.get('/api/students', async (req, res) => {
+// Health check and sheet status
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    sheets_connected: doc.title ? true : false,
+    spreadsheet_title: doc.title || 'Not Connected'
+  });
+});
+
+// Helper to check sheet initialization
+const checkInit = (req, res, next) => {
+    if (!doc.title) {
+        return res.status(503).json({ error: 'Google Sheets not initialized. Please try again in a moment.' });
+    }
+    next();
+};
+
+app.get('/api/students', checkInit, async (req, res) => {
   try {
     const studentSheet = doc.sheetsByTitle['Students'];
     const teacherSheet = doc.sheetsByTitle['Teacher'];
     
+    if (!studentSheet || !teacherSheet) {
+        throw new Error(`Required worksheets missing. Found: ${Object.keys(doc.sheetsByTitle).join(', ')}`);
+    }
+
     const [studentRows, teacherRows] = await Promise.all([
       studentSheet.getRows(),
       teacherSheet.getRows()
@@ -70,11 +90,12 @@ app.get('/api/students', async (req, res) => {
     });
     res.json(students);
   } catch (error) {
+    console.error('API Students Error:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/teachers', async (req, res) => {
+app.get('/api/teachers', checkInit, async (req, res) => {
   try {
     const sheet = doc.sheetsByTitle['Teacher'];
     const rows = await sheet.getRows();
@@ -90,33 +111,25 @@ app.get('/api/teachers', async (req, res) => {
   }
 });
 
-app.post('/api/attendance', async (req, res) => {
+app.post('/api/attendance', checkInit, async (req, res) => {
   try {
     const { student_id, teacher_id } = req.body;
     const logsSheet = doc.sheetsByTitle['Logs'];
     const logRows = await logsSheet.getRows();
 
-    // Get today's date string for comparison (e.g., "4/29/2026")
     const todayStr = new Date().toLocaleDateString();
 
-    // Find all logs for this student today
     const todayLogs = logRows.filter(row => {
       const logTime = row.get('Logs_Time');
       return row.get('Student_ID') === student_id && 
              new Date(logTime).toLocaleDateString() === todayStr;
     });
 
-    let nextStatus = 'IN'; // Default to IN for the first scan of the day
+    let nextStatus = 'IN';
 
     if (todayLogs.length > 0) {
-      // Sort logs by time to find the most recent one
-      todayLogs.sort((a, b) => {
-        return new Date(b.get('Logs_Time')) - new Date(a.get('Logs_Time'));
-      });
-      const lastLog = todayLogs[0];
-      const lastStatus = lastLog.get('Log_Type');
-      
-      // Toggle the status
+      todayLogs.sort((a, b) => new Date(b.get('Logs_Time')) - new Date(a.get('Logs_Time')));
+      const lastStatus = todayLogs[0].get('Log_Type');
       nextStatus = lastStatus === 'IN' ? 'OUT' : 'IN';
     }
 
@@ -129,18 +142,14 @@ app.post('/api/attendance', async (req, res) => {
       Log_Type: nextStatus
     });
 
-    res.json({ 
-      success: true, 
-      status: nextStatus,
-      timestamp: timestamp
-    });
+    res.json({ success: true, status: nextStatus, timestamp });
   } catch (error) {
     console.error('Attendance Log Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/analytics', async (req, res) => {
+app.get('/api/analytics', checkInit, async (req, res) => {
   try {
     const studentSheet = doc.sheetsByTitle['Students'];
     const logsSheet = doc.sheetsByTitle['Logs'];
@@ -150,18 +159,13 @@ app.get('/api/analytics', async (req, res) => {
       logsSheet.getRows()
     ]);
 
-    // Create student lookup
     const studentMap = studentRows.reduce((acc, row) => {
-      acc[row.get('Student_ID')] = {
-        name: row.get('Name'),
-        section: row.get('Section')
-      };
+      acc[row.get('Student_ID')] = { name: row.get('Name'), section: row.get('Section') };
       return acc;
     }, {});
 
-    // Aggregate logs
-    const sectionStats = {}; // { Section: { Date: Count } }
-    const studentStats = {}; // { StudentID: { Date: Count } }
+    const sectionStats = {};
+    const studentStats = {};
 
     logRows.forEach(log => {
       const studentId = log.get('Student_ID');
@@ -170,54 +174,36 @@ app.get('/api/analytics', async (req, res) => {
       const student = studentMap[studentId];
 
       if (student) {
-        // Section Stats
         if (!sectionStats[student.section]) sectionStats[student.section] = {};
         sectionStats[student.section][logDate] = (sectionStats[student.section][logDate] || 0) + 1;
 
-        // Student Stats
         if (!studentStats[studentId]) studentStats[studentId] = {};
         studentStats[studentId][logDate] = (studentStats[studentId][logDate] || 0) + 1;
       }
     });
 
-    res.json({
-      sectionStats,
-      studentStats,
-      totalLogs: logRows.length
-    });
+    res.json({ sectionStats, studentStats, totalLogs: logRows.length });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/teachers', async (req, res) => {
+app.post('/api/teachers', checkInit, async (req, res) => {
   try {
     const { teacher_id, name, email, department } = req.body;
     const sheet = doc.sheetsByTitle['Teacher'];
-    await sheet.addRow({
-      Teacher_ID: teacher_id,
-      Teacher_Name: name,
-      Teacher_Email: email,
-      Department: department
-    });
+    await sheet.addRow({ Teacher_ID: teacher_id, Teacher_Name: name, Teacher_Email: email, Department: department });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/students', async (req, res) => {
+app.post('/api/students', checkInit, async (req, res) => {
   try {
     const { name, email, id_number, rfid, section, teacher_id } = req.body;
     const sheet = doc.sheetsByTitle['Students'];
-    await sheet.addRow({
-      RFID_Code: rfid,
-      Name: name,
-      Email: email,
-      Student_ID: id_number,
-      Section: section,
-      Teacher_ID: teacher_id
-    });
+    await sheet.addRow({ RFID_Code: rfid, Name: name, Email: email, Student_ID: id_number, Section: section, Teacher_ID: teacher_id });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -225,7 +211,12 @@ app.post('/api/students', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  initSheet();
-});
+
+async function startServer() {
+    await initSheet();
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}
+
+startServer();
