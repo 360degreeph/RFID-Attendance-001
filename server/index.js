@@ -92,17 +92,50 @@ app.get('/api/teachers', async (req, res) => {
 
 app.post('/api/attendance', async (req, res) => {
   try {
-    const { rfid, student_id, name, status, teacher_id } = req.body;
-    const sheet = doc.sheetsByTitle['Logs'];
-    await sheet.addRow({
+    const { student_id, teacher_id } = req.body;
+    const logsSheet = doc.sheetsByTitle['Logs'];
+    const logRows = await logsSheet.getRows();
+
+    // Get today's date string for comparison (e.g., "4/29/2026")
+    const todayStr = new Date().toLocaleDateString();
+
+    // Find all logs for this student today
+    const todayLogs = logRows.filter(row => {
+      const logTime = row.get('Logs_Time');
+      return row.get('Student_ID') === student_id && 
+             new Date(logTime).toLocaleDateString() === todayStr;
+    });
+
+    let nextStatus = 'IN'; // Default to IN for the first scan of the day
+
+    if (todayLogs.length > 0) {
+      // Sort logs by time to find the most recent one
+      todayLogs.sort((a, b) => {
+        return new Date(b.get('Logs_Time')) - new Date(a.get('Logs_Time'));
+      });
+      const lastLog = todayLogs[0];
+      const lastStatus = lastLog.get('Log_Type');
+      
+      // Toggle the status
+      nextStatus = lastStatus === 'IN' ? 'OUT' : 'IN';
+    }
+
+    const timestamp = new Date().toLocaleString();
+    await logsSheet.addRow({
       Transaction_ID: `TXN-${Date.now()}`,
       Student_ID: student_id,
-      Logs_Time: new Date().toLocaleString(),
+      Logs_Time: timestamp,
       Teacher_ID: teacher_id || '',
-      Log_Type: status || 'IN'
+      Log_Type: nextStatus
     });
-    res.json({ success: true });
+
+    res.json({ 
+      success: true, 
+      status: nextStatus,
+      timestamp: timestamp
+    });
   } catch (error) {
+    console.error('Attendance Log Error:', error);
     res.status(500).json({ error: error.message });
   }
 });

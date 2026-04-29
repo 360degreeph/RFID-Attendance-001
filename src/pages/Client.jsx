@@ -53,35 +53,35 @@ const Client = () => {
     const foundStudent = students.find(s => s.rfid === scanValue);
     
     if (foundStudent) {
-      // Toggle status logic
-      const currentStatus = studentStatuses[foundStudent.id_number] || 'OUT';
-      const newStatus = currentStatus === 'IN' ? 'OUT' : 'IN';
-      
-      setStudentStatuses(prev => ({
-        ...prev,
-        [foundStudent.id_number]: newStatus
-      }));
-
-      const scanEntry = {
-        ...foundStudent,
-        status: newStatus,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      };
-
-      setRecentScans(prev => [scanEntry, ...prev].slice(0, 5));
       setStudent(foundStudent);
-      setStatus('success');
-      
-      // Log to backend
+      setStatus('loading'); // Optional: add a loading state if needed
+
+      // Log to backend and get the calculated status
       logAttendance({
-        rfid: foundStudent.rfid,
         student_id: foundStudent.id_number,
-        name: foundStudent.name,
-        status: newStatus,
         teacher_id: foundStudent.teacher_id
+      }).then(response => {
+        const finalStatus = response.status || 'IN';
+        
+        // Update local status tracker
+        setStudentStatuses(prev => ({
+          ...prev,
+          [foundStudent.id_number]: finalStatus
+        }));
+
+        const scanEntry = {
+          ...foundStudent,
+          status: finalStatus,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        };
+
+        setRecentScans(prev => [scanEntry, ...prev].slice(0, 5));
+        setStatus('success');
+      }).catch(err => {
+        console.error('Attendance Log Error:', err);
+        setStatus('error');
       });
 
-      console.log(`Logging attendance for: ${foundStudent.name} (${newStatus})`);
     } else {
       setStatus('error');
     }
