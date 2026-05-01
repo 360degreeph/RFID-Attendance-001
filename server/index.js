@@ -16,18 +16,22 @@ const SCOPES = [
 
 const jwt = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-  key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n').replace(/^"|"$/g, ''),
   scopes: SCOPES,
 });
 
 const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, jwt);
 
+let isSheetInitialized = false;
+
 async function initSheet() {
   try {
     await doc.loadInfo();
+    isSheetInitialized = true;
     console.log('Successfully connected to Google Sheet:', doc.title);
   } catch (error) {
     console.error('Failed to connect to Google Sheet:', error.message);
+    isSheetInitialized = false;
   }
 }
 
@@ -35,15 +39,15 @@ async function initSheet() {
 app.get('/', (req, res) => {
   res.json({
     status: 'online',
-    sheets_connected: doc.title ? true : false,
-    spreadsheet_title: doc.title || 'Not Connected'
+    sheets_connected: isSheetInitialized,
+    spreadsheet_title: isSheetInitialized ? doc.title : 'Not Connected'
   });
 });
 
 // Helper to check sheet initialization
 const checkInit = (req, res, next) => {
-    if (!doc.title) {
-        return res.status(503).json({ error: 'Google Sheets not initialized. Please try again in a moment.' });
+    if (!isSheetInitialized) {
+        return res.status(503).json({ error: 'Google Sheets not initialized. Please try again in a moment or check backend logs.' });
     }
     next();
 };
