@@ -23,11 +23,22 @@ const jwt = new JWT({
 const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, jwt);
 
 let isSheetInitialized = false;
+let schoolLogoUrl = '';
 
 async function initSheet() {
   try {
     await doc.loadInfo();
     isSheetInitialized = true;
+
+    // Fetch School Logo from 'Config' sheet cell A1
+    const configSheet = doc.sheetsByTitle['Config'];
+    if (configSheet) {
+      await configSheet.loadCells('A1:A1');
+      const cell = configSheet.getCell(0, 0);
+      schoolLogoUrl = cell.value || '';
+      console.log('School Logo URL loaded:', schoolLogoUrl);
+    }
+
     console.log('Successfully connected to Google Sheet:', doc.title);
   } catch (error) {
     console.error('Failed to connect to Google Sheet:', error.message);
@@ -97,6 +108,12 @@ app.get('/api/students', checkInit, async (req, res) => {
     console.error('API Students Error:', error.message);
     res.status(500).json({ error: error.message });
   }
+});
+
+app.get('/api/config', checkInit, (req, res) => {
+  res.json({
+    schoolLogo: schoolLogoUrl || null
+  });
 });
 
 app.get('/api/teachers', checkInit, async (req, res) => {
