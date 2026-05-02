@@ -1,15 +1,16 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap');
 
 :root {
-  --bg-dark: #0a0a0c;
-  --surface: rgba(22, 22, 26, 0.7);
-  --surface-border: rgba(255, 255, 255, 0.1);
-  --primary: #3b82f6;
-  --primary-glow: rgba(59, 130, 246, 0.5);
-  --accent: #10b981;
-  --text-main: #f9fafb;
-  --text-muted: #9ca3af;
-  --glass-bg: rgba(255, 255, 255, 0.05);
+  --bg-dark: #003049;
+  --surface: rgba(0, 48, 73, 0.7);
+  --surface-border: rgba(234, 226, 183, 0.15);
+  --primary: #f77f00;
+  --primary-glow: rgba(247, 127, 0, 0.4);
+  --accent: #fcbf49;
+  --primary-dark: #d62828;
+  --text-main: #eae2b7;
+  --text-muted: rgba(234, 226, 183, 0.6);
+  --glass-bg: rgba(234, 226, 183, 0.05);
   --glass-blur: blur(16px);
 }
 
@@ -147,4 +148,11 @@ h1, h2, h3, .brand {
 @media (min-width: 1024px) {
   .lg\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .lg\:col-span-2 { grid-column: span 2 / span 2; }
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

@@ -7,13 +7,31 @@ const api = axios.create({
   baseURL: API_BASE_URL,
 });
 
+// Utility to format Google Drive links to direct image links
+export const formatImageUrl = (url) => {
+  if (!url || typeof url !== 'string') return '';
+  // Convert drive.google.com/file/d/ID/view to a bypass endpoint
+  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (match && match[1]) {
+    return `https://lh3.googleusercontent.com/d/${match[1]}`;
+  }
+  return url;
+};
+
 export const getStudents = async () => {
   try {
     const response = await api.get('/students');
-    return response.data;
+    // Normalize photo URLs
+    return response.data.map(student => ({
+      ...student,
+      photo: formatImageUrl(student.photo)
+    }));
   } catch (error) {
     console.warn('Backend not available, using mock data');
-    return RFID_MOCK_DATA;
+    return RFID_MOCK_DATA.map(student => ({
+      ...student,
+      photo: formatImageUrl(student.photo)
+    }));
   }
 };
 
@@ -66,3 +84,17 @@ export const addTeacher = async (teacherData) => {
     throw error;
   }
 };
+
+export const getConfig = async () => {
+  try {
+    const response = await api.get('/config');
+    return {
+      ...response.data,
+      schoolLogo: formatImageUrl(response.data.schoolLogo)
+    };
+  } catch (error) {
+    console.error('Failed to fetch config');
+    return { schoolLogo: null };
+  }
+};
+

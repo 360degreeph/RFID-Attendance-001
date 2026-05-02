@@ -30,13 +30,9 @@ async function initSheet() {
     await doc.loadInfo();
     isSheetInitialized = true;
 
-    // Fetch School Logo from 'Config' sheet cell A1
     const configSheet = doc.sheetsByTitle['Config'];
     if (configSheet) {
-      await configSheet.loadCells('A1:A1');
-      const cell = configSheet.getCell(0, 0);
-      schoolLogoUrl = cell.value || '';
-      console.log('School Logo URL loaded:', schoolLogoUrl);
+      console.log('Config sheet found.');
     }
 
     console.log('Successfully connected to Google Sheet:', doc.title);
@@ -110,10 +106,21 @@ app.get('/api/students', checkInit, async (req, res) => {
   }
 });
 
-app.get('/api/config', checkInit, (req, res) => {
-  res.json({
-    schoolLogo: schoolLogoUrl || null
-  });
+app.get('/api/config', checkInit, async (req, res) => {
+  try {
+    const configSheet = doc.sheetsByTitle['Config'];
+    let currentLogo = schoolLogoUrl || null;
+    
+    if (configSheet) {
+      await configSheet.loadCells('A1:A1');
+      const cell = configSheet.getCell(0, 0);
+      currentLogo = cell.value || null;
+    }
+    
+    res.json({ schoolLogo: currentLogo });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get('/api/teachers', checkInit, async (req, res) => {
