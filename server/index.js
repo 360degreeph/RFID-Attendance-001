@@ -30,9 +30,9 @@ async function initSheet() {
     await doc.loadInfo();
     isSheetInitialized = true;
 
-    const configSheet = doc.sheetsByTitle['Config'];
+    const configSheet = doc.sheetsByTitle['logo'] || doc.sheetsByTitle['Config'];
     if (configSheet) {
-      console.log('Config sheet found.');
+      console.log('Logo/Config sheet found.');
     }
 
     console.log('Successfully connected to Google Sheet:', doc.title);
@@ -108,7 +108,7 @@ app.get('/api/students', checkInit, async (req, res) => {
 
 app.get('/api/config', checkInit, async (req, res) => {
   try {
-    const configSheet = doc.sheetsByTitle['Config'];
+    const configSheet = doc.sheetsByTitle['logo'] || doc.sheetsByTitle['Config'];
     let currentLogo = schoolLogoUrl || null;
     
     if (configSheet) {
