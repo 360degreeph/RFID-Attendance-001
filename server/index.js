@@ -4,6 +4,8 @@ const { JWT } = require('google-auth-library');
 const cors = require('cors');
 require('dotenv').config();
 
+const tzOptions = { timeZone: 'Asia/Manila' };
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -145,12 +147,12 @@ app.post('/api/attendance', checkInit, async (req, res) => {
     const logsSheet = doc.sheetsByTitle['Logs'];
     const logRows = await logsSheet.getRows();
 
-    const todayStr = new Date().toLocaleDateString();
+    const todayStr = new Date().toLocaleDateString('en-US', tzOptions);
 
     const todayLogs = logRows.filter(row => {
       const logTime = row.get('Logs_Time');
       return row.get('Student_ID') === student_id && 
-             new Date(logTime).toLocaleDateString() === todayStr;
+             new Date(logTime).toLocaleDateString('en-US', tzOptions) === todayStr;
     });
 
     let nextStatus = clientStatus || 'IN';
@@ -161,7 +163,7 @@ app.post('/api/attendance', checkInit, async (req, res) => {
       nextStatus = lastStatus === 'IN' ? 'OUT' : 'IN';
     }
 
-    const timestamp = clientTimestamp ? new Date(clientTimestamp).toLocaleString() : new Date().toLocaleString();
+    const timestamp = clientTimestamp ? new Date(clientTimestamp).toLocaleString('en-US', tzOptions) : new Date().toLocaleString('en-US', tzOptions);
     await logsSheet.addRow({
       Transaction_ID: `TXN-${Date.now()}`,
       Student_ID: student_id,
@@ -199,7 +201,7 @@ app.get('/api/analytics', checkInit, async (req, res) => {
     logRows.forEach(log => {
       const studentId = log.get('Student_ID');
       const timeStr = log.get('Logs_Time');
-      const logDate = new Date(timeStr).toLocaleDateString();
+      const logDate = new Date(timeStr).toLocaleDateString('en-US', tzOptions);
       const student = studentMap[studentId];
 
       if (student) {
