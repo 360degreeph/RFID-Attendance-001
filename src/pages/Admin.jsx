@@ -140,7 +140,7 @@ const Admin = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[#0a0a0c]">
+    <div className="flex h-screen bg-navy text-cream">
       {/* Sidebar */}
       <div className="w-64 glass border-r-0 rounded-none border-y-0 p-6 flex flex-col">
         <div className="flex items-center gap-3 mb-10 px-2">

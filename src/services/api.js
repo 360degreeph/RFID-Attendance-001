@@ -10,11 +10,25 @@ const api = axios.create({
 // Utility to format Google Drive links to direct image links
 export const formatImageUrl = (url) => {
   if (!url || typeof url !== 'string') return '';
-  // Convert drive.google.com/file/d/ID/view to a bypass endpoint
-  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (match && match[1]) {
-    return `https://lh3.googleusercontent.com/d/${match[1]}`;
+  
+  // Handle various Google Drive URL formats
+  // 1. file/d/ID/view
+  // 2. open?id=ID
+  // 3. uc?id=ID
+  let fileId = '';
+  
+  const fileDMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  const idParamMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  const ucMatch = url.match(/\/uc\?id=([a-zA-Z0-9_-]+)/);
+
+  if (fileDMatch && fileDMatch[1]) fileId = fileDMatch[1];
+  else if (idParamMatch && idParamMatch[1]) fileId = idParamMatch[1];
+  else if (ucMatch && ucMatch[1]) fileId = ucMatch[1];
+
+  if (fileId) {
+    return `https://lh3.googleusercontent.com/d/${fileId}`;
   }
+  
   return url;
 };
 

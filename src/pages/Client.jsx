@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Scan, User, CheckCircle, XCircle, LogIn, LogOut, Clock } from 'lucide-react';
 import { getStudents, logAttendance, getConfig } from '../services/api';
-import { prefetchImages } from '../services/imageCache';
+import { prefetchImages, getCachedImageUrl } from '../services/imageCache';
 
 const Client = () => {
   const [scanValue, setScanValue] = useState('');
@@ -11,8 +11,65 @@ const Client = () => {
   const [recentScans, setRecentScans] = useState([]);
   const [studentStatuses, setStudentStatuses] = useState({}); // Tracking IN/OUT per student
   const [isSyncingImages, setIsSyncingImages] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [logoUrl, setLogoUrl] = useState('/school-logo.png');
+  const [localLogo, setLocalLogo] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [pendingSyncCount, setPendingSyncCount] = useState(() => {
+    const pending = localStorage.getItem('pending_logs');
+    return pending ? JSON.parse(pending).length : 0;
+  });
+  const [deviceId] = useState(() => {
+    let id = localStorage.getItem('device_id');
+    if (!id) {
+      id = 'DEV-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      localStorage.setItem('device_id', id);
+    }
+    return id;
+  });
+  
+  // Audio context for beep sounds
+  const playBeep = (type = 'success') => {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      
+      if (type === 'in') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
+        gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.2);
+      } else if (type === 'out') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1200, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.1);
+        gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.2);
+      } else {
+        // Error beep
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.3);
+      }
+    } catch (e) {
+      console.error('Audio playback failed', e);
+    }
+  };
   
   
   const inputRef = useRef(null);
@@ -22,29 +79,100 @@ const Client = () => {
   // Initial data fetch
   useEffect(() => {
     const fetchInitialData = async () => {
-      const [studentData, configData] = await Promise.all([
-        getStudents(),
-        getConfig().catch(() => ({ schoolLogo: '/school-logo.png' }))
-      ]);
-      
-      if (configData?.schoolLogo) {
-        setLogoUrl(configData.schoolLogo);
-      }
-      
-      setStudents(studentData);
-      
-      // Start prefetching images once students are loaded
-      if (studentData && studentData.length > 0) {
-        setIsSyncingImages(true);
-        prefetchImages(studentData, configData?.schoolLogo).finally(() => setIsSyncingImages(false));
+      try {
+        const [studentData, configData] = await Promise.all([
+          getStudents(),
+          getConfig().catch(() => ({ schoolLogo: '/school-logo.png' }))
+        ]);
+        
+        if (configData?.schoolLogo) {
+          setLogoUrl(configData.schoolLogo);
+        }
+        
+        if (studentData && studentData.length > 0) {
+          setStudents(studentData);
+          localStorage.setItem('cached_students', JSON.stringify(studentData));
+          
+          // Start prefetching images
+          setIsSyncingImages(true);
+          prefetchImages(studentData, configData?.schoolLogo, (progress) => {
+            setSyncProgress(progress);
+          }).finally(async () => {
+            if (configData?.schoolLogo) {
+              const local = await getCachedImageUrl(configData.schoolLogo);
+              setLocalLogo(local);
+            }
+            setIsSyncingImages(false);
+            setIsInitialLoad(false);
+          });
+        } else {
+          setIsInitialLoad(false);
+        }
+      } catch (error) {
+        console.warn('Initial fetch failed, loading from cache...', error);
+        const cached = localStorage.getItem('cached_students');
+        if (cached) {
+          const studentList = JSON.parse(cached);
+          setStudents(studentList);
+          
+          // Try to resolve logo from cache even if offline
+          const config = await getConfig().catch(() => null);
+          if (config?.schoolLogo) {
+            const local = await getCachedImageUrl(config.schoolLogo);
+            setLocalLogo(local);
+          }
+        }
       }
     };
     fetchInitialData();
 
+    // Sync listener
+    const handleOnline = () => {
+      setIsOnline(true);
+      syncPendingLogs();
+    };
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     // Refresh data every 5 minutes
     const interval = setInterval(fetchInitialData, 300000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
+    };
   }, []);
+
+  const syncPendingLogs = async () => {
+    const pending = JSON.parse(localStorage.getItem('pending_logs') || '[]');
+    if (pending.length === 0) return;
+
+    console.log(`Syncing ${pending.length} pending logs...`);
+    const successfulSyncs = [];
+    
+    for (const log of pending) {
+      try {
+        await logAttendance({
+          student_id: log.id_number,
+          teacher_id: log.teacher_id,
+          timestamp: log.timestamp,
+          status: log.status,
+          device_id: log.device_id
+        });
+        successfulSyncs.push(log.id_number + log.timestamp);
+      } catch (err) {
+        console.error('Failed to sync log, will try again later', err);
+        break; // Stop syncing if connection is still shaky
+      }
+    }
+
+    const remaining = pending.filter(log => !successfulSyncs.includes(log.id_number + log.timestamp));
+    localStorage.setItem('pending_logs', JSON.stringify(remaining));
+    setPendingSyncCount(remaining.length);
+  };
 
   useEffect(() => {
     // Clock timer
@@ -72,6 +200,14 @@ const Client = () => {
     return () => { if (idleTimerRef.current) clearTimeout(idleTimerRef.current); };
   }, [recentScans]);
 
+  const resolveLocalImage = async (studentObj) => {
+    if (studentObj.photo) {
+      const localUrl = await getCachedImageUrl(studentObj.photo);
+      return { ...studentObj, photo: localUrl };
+    }
+    return studentObj;
+  };
+
   const handleScan = async (e) => {
     e.preventDefault();
     if (!scanValue) return;
@@ -83,13 +219,13 @@ const Client = () => {
       setStatus('loading'); // Optional: add a loading state if needed
 
       // Log to backend and get the calculated status
-      logAttendance({
+      const logData = {
         student_id: foundStudent.id_number,
-        teacher_id: foundStudent.teacher_id
-      }).then(response => {
-        const finalStatus = response.status || 'IN';
-        
-        // Update local status tracker
+        teacher_id: foundStudent.teacher_id,
+        device_id: deviceId
+      };
+
+      const handleSuccessfulLog = (finalStatus) => {
         setStudentStatuses(prev => ({
           ...prev,
           [foundStudent.id_number]: finalStatus
@@ -101,66 +237,106 @@ const Client = () => {
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         };
 
-        setRecentScans(prev => [scanEntry, ...prev].slice(0, 12));
-        setStatus('success');
-
-        if (timerRef.current) clearTimeout(timerRef.current);
-        timerRef.current = setTimeout(() => {
-          setStatus('idle');
-          setStudent(null);
-        }, 500); // Show success for 0.5 seconds
-      }).catch(err => {
-        console.error('Attendance Log Error:', err);
-        setStatus('error');
+        // Resolve local path for immediate display
+        resolveLocalImage(scanEntry).then(resolved => {
+          setRecentScans(prev => [resolved, ...prev].slice(0, 12));
+        });
         
-        if (timerRef.current) clearTimeout(timerRef.current);
-        timerRef.current = setTimeout(() => {
-          setStatus('idle');
-          setStudent(null);
-        }, 500); // Show error for 0.5 seconds
-      });
+        playBeep(finalStatus === 'IN' ? 'in' : 'out');
+      };
 
+      if (navigator.onLine) {
+        logAttendance(logData).then(response => {
+          handleSuccessfulLog(response.status || 'IN');
+        }).catch(err => {
+          console.error('Online log failed, queuing...', err);
+          queueLogLocally(foundStudent);
+        });
+      } else {
+        queueLogLocally(foundStudent);
+      }
     } else {
-      setStatus('error');
-      
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => {
-        setStatus('idle');
-        setStudent(null);
-      }, 500); // Show error for 0.5 seconds
+      playBeep('error');
     }
 
     setScanValue('');
   };
 
+  const queueLogLocally = (studentInfo) => {
+    const lastStatus = studentStatuses[studentInfo.id_number] || 'OUT';
+    const nextStatus = lastStatus === 'IN' ? 'OUT' : 'IN';
+    
+    const scanEntry = {
+      ...studentInfo,
+      status: nextStatus,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      isOffline: true
+    };
+
+    // Update UI immediately
+    setStudentStatuses(prev => ({ ...prev, [studentInfo.id_number]: nextStatus }));
+    
+    resolveLocalImage(scanEntry).then(resolved => {
+      setRecentScans(prev => [resolved, ...prev].slice(0, 12));
+    });
+    
+    playBeep(nextStatus === 'IN' ? 'in' : 'out');
+
+    // Save to queue
+    const pending = JSON.parse(localStorage.getItem('pending_logs') || '[]');
+    pending.push({
+      id_number: studentInfo.id_number,
+      teacher_id: studentInfo.teacher_id,
+      timestamp: new Date().toISOString(),
+      status: nextStatus,
+      device_id: deviceId
+    });
+    localStorage.setItem('pending_logs', JSON.stringify(pending));
+    setPendingSyncCount(pending.length);
+  };
+
   return (
-    <div className="client-container w-screen bg-bg-dark text-text-main overflow-hidden flex flex-col font-['Inter']" style={{ height: '100vh' }}>
+    <div className="client-container w-screen bg-navy text-cream overflow-hidden flex flex-col font-['Inter']" style={{ height: '100vh' }}>
       
       {/* ----------------- HEADER ----------------- */}
-      <div className="w-full bg-[#00253a] border-b border-surface-border px-8 flex items-center justify-between z-30 shadow-lg" style={{ height: '12%' }}>
-        {/* Left: Logo Only */}
-        <div className="flex items-center gap-4">
-          <img src={logoUrl} alt="Logo" className="w-16 h-16 object-contain drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]" />
+      <div className="w-full bg-surface border-b-4 border-primary px-8 flex items-center justify-between z-30 shadow-[0_10px_30px_rgba(0,0,0,0.5)] relative overflow-hidden" style={{ height: '14%' }}>
+        
+        {/* Left: Logo Placeholder */}
+        <div className="flex items-center gap-4 z-10 w-32">
         </div>
 
-        {/* Center: Title (School Name) */}
-        <div className="hidden md:flex flex-col items-center justify-center">
-          <span className="brand font-extrabold text-3xl lg:text-4xl tracking-widest uppercase text-white drop-shadow-md">
-            Calinog National
-          </span>
-          <span className="brand font-extrabold text-3xl lg:text-4xl tracking-widest uppercase text-primary drop-shadow-md">
-            High School
-          </span>
-        </div>
-
-        {/* Right: Clock & Sync */}
-        <div className="flex flex-col items-end">
-          <span className="brand font-bold text-2xl text-accent tabular-nums">
+        {/* Center: Title (School Name) & Date/Time */}
+        <div className="hidden md:flex flex-col items-center justify-center z-10 flex-1">
+          <div className="flex flex-col items-center leading-none">
+            <span className="brand font-extrabold text-4xl lg:text-6xl tracking-tighter uppercase text-white drop-shadow-lg text-center whitespace-nowrap">
+              Calinog National
+            </span>
+            <span className="brand font-extrabold text-4xl lg:text-6xl tracking-tighter uppercase text-primary drop-shadow-lg text-center whitespace-nowrap">
+              High School
+            </span>
+          </div>
+          <div className="mt-1 text-base lg:text-lg font-bold tracking-[0.2em] text-accent/80 uppercase drop-shadow-md tabular-nums bg-black/30 px-4 py-1 rounded-full border border-white/5 backdrop-blur-sm text-center">
+            {currentTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} 
+            <span className="mx-3 text-white/20">|</span> 
             {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </span>
+          </div>
+        </div>
+
+        {/* Right: Sync Indicator */}
+        <div className="flex flex-col items-end z-10 w-32 gap-2">
+          {!isOnline && (
+            <div className="flex items-center gap-2 text-[10px] text-red-500 bg-red-500/10 px-3 py-1.5 rounded-full border border-red-500/20">
+              <span className="font-bold tracking-widest uppercase">Offline Mode</span>
+            </div>
+          )}
+          {pendingSyncCount > 0 && (
+            <div className="flex items-center gap-2 text-[10px] text-accent bg-accent/10 px-3 py-1.5 rounded-full border border-accent/20">
+              <span className="font-bold tracking-widest uppercase">{pendingSyncCount} Pending Sync</span>
+            </div>
+          )}
           {isSyncingImages && (
-            <div className="flex items-center gap-2 text-[10px] text-primary animate-pulse mt-1">
-              <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
+            <div className="flex items-center gap-2 text-[10px] text-primary animate-pulse bg-black/40 px-3 py-1.5 rounded-full border border-white/10">
+              <div className="w-2 h-2 rounded-full bg-primary"></div>
               <span className="font-bold tracking-widest uppercase">Syncing...</span>
             </div>
           )}
@@ -169,6 +345,12 @@ const Client = () => {
 
       {/* ----------------- MAIN CONTENT (60%) ----------------- */}
       <div className="w-full relative flex flex-col items-center justify-center p-8 overflow-hidden" style={{ height: '58%' }}>
+        
+        {/* Logo Watermark Background */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 opacity-[0.03]">
+          <img src={localLogo || logoUrl} alt="Watermark" className="w-[80vh] h-[80vh] object-contain grayscale" />
+        </div>
+
         {/* Background Gradients */}
         <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
           <div className="absolute -top-1/2 -left-1/4 w-[150%] h-[150%] bg-[radial-gradient(circle,rgba(247,127,0,0.08)_0%,transparent_70%)]"></div>
@@ -179,97 +361,30 @@ const Client = () => {
           <input ref={inputRef} type="text" value={scanValue} onChange={(e) => setScanValue(e.target.value)} autoFocus />
         </form>
 
-        {status === 'idle' && (
-          <div className="text-center animate-fade-in py-10 px-16 glass border-surface-border rounded-[40px] w-full max-w-lg">
-            <div className="w-28 h-28 glass flex items-center justify-center mx-auto mb-8 border-primary/30 shadow-[0_0_40px_rgba(247,127,0,0.2)] rounded-full">
-              <Scan size={56} className="text-primary animate-pulse" />
-            </div>
-            <h1 className="text-5xl font-black mb-4 tracking-tight text-white uppercase italic">READY TO SCAN</h1>
-            <p className="text-text-muted text-xl font-medium mb-8">Please tap your RFID card</p>
-            
-            <form onSubmit={handleScan} className="w-full mb-8">
-              <input
-                ref={inputRef}
-                type="text"
-                value={scanValue}
-                onChange={(e) => setScanValue(e.target.value)}
-                placeholder="Awaiting scan..."
-                className="w-full bg-black/20 border border-white/10 text-white text-center rounded-2xl px-6 py-4 text-2xl focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-white/10 font-bold"
-                autoFocus
-              />
-            </form>
-
-            <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden relative">
-              <div className="absolute inset-0 bg-primary/40 animate-[ping_2s_infinite]"></div>
-            </div>
+        {/* Persistent Scan Area */}
+        <div className="text-center animate-fade-in py-8 px-10 glass border-surface-border rounded-[32px] w-full max-w-md z-10 relative bg-black/40 backdrop-blur-md">
+          <div className="w-20 h-20 glass flex items-center justify-center mx-auto mb-6 border-primary/30 shadow-[0_0_30px_rgba(247,127,0,0.2)] rounded-full">
+            <Scan size={40} className="text-primary animate-pulse" />
           </div>
-        )}
+          <h1 className="text-4xl font-black mb-2 tracking-tight text-red-500 uppercase italic">READY TO SCAN</h1>
+          <p className="text-text-muted text-lg font-medium mb-6">Please tap your RFID card</p>
+          
+          <form onSubmit={handleScan} className="w-full mb-6 flex justify-center">
+            <input
+              ref={inputRef}
+              type="text"
+              value={scanValue}
+              onChange={(e) => setScanValue(e.target.value)}
+              placeholder="***"
+              className="w-28 bg-transparent border-b border-white/5 text-white/20 text-center px-4 py-1 text-sm focus:outline-none focus:border-primary/20 transition-all placeholder:text-white/10 tracking-[0.5em]"
+              autoFocus
+            />
+          </form>
 
-        {status === 'success' && student && (
-          <div className="w-full max-w-4xl glass p-10 flex items-center gap-12 animate-fade-in border-accent/30 shadow-[0_0_80px_rgba(247,127,0,0.1)] rounded-[40px] relative overflow-hidden">
-            {/* Status Indicator */}
-            <div className={`absolute top-0 right-0 px-8 py-3 rounded-bl-[40px] font-black text-xl tracking-wider uppercase flex items-center gap-2 ${
-              studentStatuses[student.id_number] === 'IN' ? 'bg-primary text-white' : 'bg-primary-dark text-white'
-            }`}>
-              {studentStatuses[student.id_number] === 'IN' ? <LogIn size={24} /> : <LogOut size={24} />}
-              {studentStatuses[student.id_number] === 'IN' ? 'ENTRY ACCEPTED' : 'EXIT LOGGED'}
-            </div>
-
-            {/* Left: Student Profile */}
-            <div className="flex flex-col items-center">
-              <div className="relative">
-                <div className={`w-56 h-56 rounded-full overflow-hidden border-8 shadow-2xl bg-[#00253a] ${
-                  studentStatuses[student.id_number] === 'IN' ? 'border-primary/40 shadow-primary/20' : 'border-primary-dark/40 shadow-primary-dark/20'
-                }`}>
-                  {student.photo ? (
-                    <img src={student.photo} alt={student.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-[#00253a] flex items-center justify-center">
-                      <User size={120} className="text-zinc-600" />
-                    </div>
-                  )}
-                </div>
-                <div className={`absolute -bottom-2 -right-2 rounded-full p-3 text-white shadow-xl ${
-                  studentStatuses[student.id_number] === 'IN' ? 'bg-primary' : 'bg-primary-dark'
-                }`}>
-                  <CheckCircle size={40} />
-                </div>
-              </div>
-            </div>
-
-            {/* Right: Info Area */}
-            <div className="flex-1 flex flex-col justify-center">
-              <h2 className="text-6xl font-black mb-2 tracking-tight text-white uppercase leading-none">{student.name}</h2>
-              <div className="flex items-center gap-4 mb-6">
-                <span className="text-2xl font-bold text-accent uppercase tracking-wider">{student.section || 'Grade 11-A'}</span>
-                <span className="w-2 h-2 rounded-full bg-white/10"></span>
-                <span className="text-2xl font-medium text-text-muted">ID: {student.id_number}</span>
-              </div>
-              
-              <div className="h-px w-full bg-white/5 mb-6"></div>
-              
-              <div className="flex flex-col">
-                <span className="text-sm font-bold text-text-muted uppercase tracking-[0.2em] mb-1">Status Update</span>
-                <span className="text-4xl font-bold text-white uppercase italic">
-                  {studentStatuses[student.id_number] === 'IN' ? 'LOGGED IN AT' : 'LOGGED OUT AT'} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-                <p className="text-xl text-accent/80 font-medium mt-2 italic">
-                  Have a great day, {student.name.split(' ')[0]}!
-                </p>
-              </div>
-            </div>
+          <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden relative">
+            <div className="absolute inset-0 bg-primary/40 animate-[ping_2s_infinite]"></div>
           </div>
-        )}
-
-        {status === 'error' && (
-          <div className="max-w-xl w-full glass p-10 text-center animate-fade-in border-red-500/50 shadow-[0_0_60px_rgba(239,68,68,0.2)] rounded-[40px]">
-            <div className="w-28 h-28 glass flex items-center justify-center mx-auto mb-8 border-red-500/30 rounded-full">
-              <XCircle size={64} className="text-red-500" />
-            </div>
-            <h2 className="text-5xl font-black mb-2 text-white italic uppercase">ACCESS DENIED</h2>
-            <p className="text-red-400 font-bold text-2xl uppercase tracking-widest">Unregistered Card</p>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* ----------------- RECENT LOGS (30%) ----------------- */}
@@ -287,14 +402,14 @@ const Client = () => {
         <div className="flex-1 overflow-y-auto no-scrollbar">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-4">
             {recentScans.map((scan, i) => (
-              <div key={`${scan.id_number}-${i}`} className="flex items-center gap-4 animate-fade-in glass py-3 px-5 border-white/10 hover:border-primary/40 transition-all bg-black/30 rounded-2xl group">
+              <div key={`${scan.id_number}-${i}`} className={`flex items-center gap-4 animate-fade-in glass py-3 px-5 hover:border-primary/40 transition-all bg-black/30 rounded-2xl group border-l-4 ${scan.status === 'IN' ? 'border-l-accent border-y-white/5 border-r-white/5' : 'border-l-red-500 border-y-white/5 border-r-white/5'}`}>
                 <div className="relative">
-                  <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/10 bg-zinc-900 group-hover:border-primary/50 transition-colors">
+                  <div className={`w-12 h-12 rounded-full overflow-hidden border-2 bg-zinc-900 group-hover:border-primary/50 transition-colors ${scan.status === 'IN' ? 'border-accent/30' : 'border-red-500'}`}>
                     {scan.photo ? (
                       <img src={scan.photo} alt={scan.name} className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full bg-zinc-800 flex items-center justify-center">
-                        <User size={20} className="text-zinc-500" />
+                      <div className={`w-full h-full flex items-center justify-center ${scan.status === 'IN' ? 'bg-accent/10' : 'bg-red-500'}`}>
+                        {scan.status === 'IN' ? <LogIn size={20} className="text-accent" /> : <LogOut size={20} className="text-white" />}
                       </div>
                     )}
                   </div>
@@ -302,12 +417,15 @@ const Client = () => {
                     scan.status === 'IN' ? 'bg-accent' : 'bg-red-500'
                   }`}></div>
                 </div>
-                <div className="flex flex-col flex-1 min-w-0">
-                  <span className="text-sm font-black text-white truncate uppercase">{scan.name}</span>
+                   <div className="flex flex-col flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black text-white truncate uppercase">{scan.name}</span>
+                    {scan.isOffline && <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" title="Pending Sync"></div>}
+                  </div>
                   <div className="flex items-center gap-2 text-[10px] text-text-muted font-bold">
                     <span>{scan.timestamp}</span>
                     <span className="opacity-30">|</span>
-                    <span className={`font-black ${scan.status === 'IN' ? 'text-accent' : 'text-red-400'}`}>
+                    <span className={`font-black ${scan.status === 'IN' ? 'text-accent' : 'text-red-500'}`}>
                       {scan.status === 'IN' ? 'IN' : 'OUT'}
                     </span>
                   </div>
@@ -322,6 +440,46 @@ const Client = () => {
           </div>
         </div>
       </div>
+      {/* ----------------- INITIAL SYNC LOADER ----------------- */}
+      {isInitialLoad && (
+        <div className="fixed inset-0 z-[100] bg-[#001e2e] flex flex-col items-center justify-center p-8">
+          <div className="absolute inset-0 opacity-10">
+            <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(247,127,0,0.1),transparent)]"></div>
+            <div className="w-full h-full" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
+          </div>
+          
+          <div className="relative z-10 flex flex-col items-center max-w-sm w-full">
+            <div className="w-24 h-24 mb-8 relative">
+              <div className="absolute inset-0 rounded-full border-4 border-white/5"></div>
+              <div 
+                className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin"
+                style={{ clipPath: `conic-gradient(from 0deg, #f77f00 ${syncProgress}%, transparent 0deg)` }}
+              ></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="brand text-xl font-black text-white">{syncProgress}%</span>
+              </div>
+            </div>
+            
+            <h2 className="brand text-2xl font-black text-white tracking-widest uppercase mb-2">Initializing System</h2>
+            <p className="text-text-muted text-sm text-center mb-8 font-medium">Synchronizing student records and media for offline use. This may take a moment...</p>
+            
+            <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden mb-2">
+              <div 
+                className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-300 ease-out"
+                style={{ width: `${syncProgress}%` }}
+              ></div>
+            </div>
+            <div className="flex justify-between w-full text-[10px] font-black uppercase tracking-widest text-white/30">
+              <span>{syncProgress === 100 ? 'Sync Complete' : 'Downloading Assets'}</span>
+              <span>{syncProgress}%</span>
+            </div>
+          </div>
+          
+          <div className="absolute bottom-10 text-[10px] font-black text-white/20 uppercase tracking-[0.5em]">
+            Sentinel Attendance System v1.0
+          </div>
+        </div>
+      )}
     </div>
   );
 };

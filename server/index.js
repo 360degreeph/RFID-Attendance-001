@@ -141,7 +141,7 @@ app.get('/api/teachers', checkInit, async (req, res) => {
 
 app.post('/api/attendance', checkInit, async (req, res) => {
   try {
-    const { student_id, teacher_id } = req.body;
+    const { student_id, teacher_id, timestamp: clientTimestamp, status: clientStatus, device_id } = req.body;
     const logsSheet = doc.sheetsByTitle['Logs'];
     const logRows = await logsSheet.getRows();
 
@@ -153,21 +153,22 @@ app.post('/api/attendance', checkInit, async (req, res) => {
              new Date(logTime).toLocaleDateString() === todayStr;
     });
 
-    let nextStatus = 'IN';
+    let nextStatus = clientStatus || 'IN';
 
-    if (todayLogs.length > 0) {
+    if (!clientStatus && todayLogs.length > 0) {
       todayLogs.sort((a, b) => new Date(b.get('Logs_Time')) - new Date(a.get('Logs_Time')));
       const lastStatus = todayLogs[0].get('Log_Type');
       nextStatus = lastStatus === 'IN' ? 'OUT' : 'IN';
     }
 
-    const timestamp = new Date().toLocaleString();
+    const timestamp = clientTimestamp ? new Date(clientTimestamp).toLocaleString() : new Date().toLocaleString();
     await logsSheet.addRow({
       Transaction_ID: `TXN-${Date.now()}`,
       Student_ID: student_id,
       Logs_Time: timestamp,
       Teacher_ID: teacher_id || '',
-      Log_Type: nextStatus
+      Log_Type: nextStatus,
+      Device_ID: device_id || 'UNKNOWN'
     });
 
     res.json({ success: true, status: nextStatus, timestamp });

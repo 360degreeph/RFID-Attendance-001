@@ -7,7 +7,7 @@ import './index.css';
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-[#0a0a0c] text-[#f9fafb]">
+      <div className="min-h-screen bg-navy text-cream">
         <Routes>
           <Route path="/" element={<Client />} />
           <Route path="/admin/*" element={<Admin />} />
