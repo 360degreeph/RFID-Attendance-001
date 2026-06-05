@@ -178,14 +178,20 @@ const Client = () => {
     // Clock timer
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     
-    // Keep input focused at all times
-    const focusInterval = setInterval(() => {
+    // Keep input focused if user clicks anywhere
+    const handleGlobalClick = () => {
       if (inputRef.current) inputRef.current.focus();
-    }, 100);
+    };
+    document.addEventListener('click', handleGlobalClick);
+    document.addEventListener('touchstart', handleGlobalClick);
+    
+    // Initial focus
+    setTimeout(() => { if (inputRef.current) inputRef.current.focus(); }, 500);
     
     return () => {
       clearInterval(timer);
-      clearInterval(focusInterval);
+      document.removeEventListener('click', handleGlobalClick);
+      document.removeEventListener('touchstart', handleGlobalClick);
     };
   }, []);
 
@@ -209,10 +215,11 @@ const Client = () => {
   };
 
   const handleScan = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!scanValue) return;
 
-    const foundStudent = students.find(s => s.rfid === scanValue);
+    const cleanScan = scanValue.trim();
+    const foundStudent = students.find(s => String(s.rfid).trim() === cleanScan);
     
     if (foundStudent) {
       setStudent(foundStudent);
@@ -372,8 +379,11 @@ const Client = () => {
               type="text"
               value={scanValue}
               onChange={(e) => setScanValue(e.target.value)}
-              placeholder="***"
-              className="w-28 bg-transparent border-b border-white/5 text-white/20 text-center px-4 py-1 text-sm focus:outline-none focus:border-primary/20 transition-all placeholder:text-white/10 tracking-[0.5em]"
+              onBlur={(e) => setTimeout(() => e.target.focus(), 10)}
+              placeholder="SCAN RFID"
+              inputMode="none"
+              autoComplete="off"
+              className="w-48 bg-transparent border-b-2 border-white/20 text-white text-center px-4 py-2 text-xl focus:outline-none focus:border-primary transition-all placeholder:text-white/20 tracking-[0.2em] font-black"
               autoFocus
             />
           </form>
