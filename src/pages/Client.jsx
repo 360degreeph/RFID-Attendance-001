@@ -407,11 +407,11 @@ const Client = () => {
         </div>
         
         <div className="flex-1 overflow-y-auto no-scrollbar">
-          <div className="grid grid-cols-5 gap-2 pb-4">
+          <div className="grid gap-2 pb-4" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', alignContent: 'start' }}>
             {recentScans.map((scan, i) => (
-              <div key={`${scan.id_number}-${i}`} className={`flex items-center gap-2 animate-fade-in glass py-1.5 px-3 hover:border-primary/40 transition-all bg-black/30 rounded-2xl group border-l-4 ${scan.status === 'IN' ? 'border-l-accent border-y-white/5 border-r-white/5' : 'border-l-red-500 border-y-white/5 border-r-white/5'}`}>
+              <div key={`${scan.id_number}-${i}`} className={`flex items-center gap-2 animate-fade-in glass py-2 px-3 hover:border-primary/40 transition-all bg-black/30 rounded-2xl group border-l-4 ${scan.status === 'IN' ? 'border-l-accent border-y-white/5 border-r-white/5' : 'border-l-red-500 border-y-white/5 border-r-white/5'}`}>
                 <div className="relative shrink-0">
-                  <div className={`w-10 h-10 rounded-full overflow-hidden border-2 bg-zinc-900 group-hover:border-primary/50 transition-colors ${scan.status === 'IN' ? 'border-accent/30' : 'border-red-500'}`}>
+                  <div className={`rounded-full overflow-hidden border-2 bg-zinc-900 group-hover:border-primary/50 transition-colors ${scan.status === 'IN' ? 'border-accent/30' : 'border-red-500'}`} style={{ width: '40px', height: '40px' }}>
                     {scan.photo ? (
                       <img src={scan.photo} alt={scan.name} className="w-full h-full object-cover rounded-full" />
                     ) : (
