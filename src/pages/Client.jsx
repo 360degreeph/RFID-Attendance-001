@@ -410,10 +410,10 @@ const Client = () => {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-4">
             {recentScans.map((scan, i) => (
               <div key={`${scan.id_number}-${i}`} className={`flex items-center gap-4 animate-fade-in glass py-3 px-5 hover:border-primary/40 transition-all bg-black/30 rounded-2xl group border-l-4 ${scan.status === 'IN' ? 'border-l-accent border-y-white/5 border-r-white/5' : 'border-l-red-500 border-y-white/5 border-r-white/5'}`}>
-                <div className="relative">
+                <div className="relative shrink-0">
                   <div className={`w-12 h-12 rounded-full overflow-hidden border-2 bg-zinc-900 group-hover:border-primary/50 transition-colors ${scan.status === 'IN' ? 'border-accent/30' : 'border-red-500'}`}>
                     {scan.photo ? (
-                      <img src={scan.photo} alt={scan.name} className="w-full h-full object-cover" />
+                      <img src={scan.photo} alt={scan.name} className="w-full h-full object-cover rounded-full" />
                     ) : (
                       <div className={`w-full h-full flex items-center justify-center ${scan.status === 'IN' ? 'bg-accent/10' : 'bg-red-500'}`}>
                         {scan.status === 'IN' ? <LogIn size={20} className="text-accent" /> : <LogOut size={20} className="text-white" />}
