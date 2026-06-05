@@ -407,29 +407,29 @@ const Client = () => {
         </div>
         
         <div className="flex-1 overflow-y-auto no-scrollbar">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 pb-4">
+          <div className="grid grid-cols-5 gap-2 pb-4">
             {recentScans.map((scan, i) => (
-              <div key={`${scan.id_number}-${i}`} className={`flex items-center gap-3 animate-fade-in glass py-2 px-4 hover:border-primary/40 transition-all bg-black/30 rounded-2xl group border-l-4 ${scan.status === 'IN' ? 'border-l-accent border-y-white/5 border-r-white/5' : 'border-l-red-500 border-y-white/5 border-r-white/5'}`}>
+              <div key={`${scan.id_number}-${i}`} className={`flex items-center gap-2 animate-fade-in glass py-1.5 px-3 hover:border-primary/40 transition-all bg-black/30 rounded-2xl group border-l-4 ${scan.status === 'IN' ? 'border-l-accent border-y-white/5 border-r-white/5' : 'border-l-red-500 border-y-white/5 border-r-white/5'}`}>
                 <div className="relative shrink-0">
-                  <div className={`w-12 h-12 rounded-full overflow-hidden border-2 bg-zinc-900 group-hover:border-primary/50 transition-colors ${scan.status === 'IN' ? 'border-accent/30' : 'border-red-500'}`}>
+                  <div className={`w-10 h-10 rounded-full overflow-hidden border-2 bg-zinc-900 group-hover:border-primary/50 transition-colors ${scan.status === 'IN' ? 'border-accent/30' : 'border-red-500'}`}>
                     {scan.photo ? (
                       <img src={scan.photo} alt={scan.name} className="w-full h-full object-cover rounded-full" />
                     ) : (
                       <div className={`w-full h-full flex items-center justify-center ${scan.status === 'IN' ? 'bg-accent/10' : 'bg-red-500'}`}>
-                        {scan.status === 'IN' ? <LogIn size={20} className="text-accent" /> : <LogOut size={20} className="text-white" />}
+                        {scan.status === 'IN' ? <LogIn size={16} className="text-accent" /> : <LogOut size={16} className="text-white" />}
                       </div>
                     )}
                   </div>
-                  <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-4 border-[#0d0d12] ${
+                  <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-4 border-[#0d0d12] ${
                     scan.status === 'IN' ? 'bg-accent' : 'bg-red-500'
                   }`}></div>
                 </div>
                    <div className="flex flex-col flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-black text-white truncate uppercase">{scan.name}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-black text-white truncate uppercase">{scan.name}</span>
                     {scan.isOffline && <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" title="Pending Sync"></div>}
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] text-text-muted font-bold">
+                  <div className="flex items-center gap-1.5 text-[9px] text-text-muted font-bold">
                     <span>{scan.timestamp}</span>
                     <span className="opacity-30">|</span>
                     <span className={`font-black ${scan.status === 'IN' ? 'text-accent' : 'text-red-500'}`}>
