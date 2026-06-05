@@ -357,9 +357,6 @@ const Client = () => {
           <div className="absolute top-0 right-0 w-full h-full bg-[linear-gradient(to_bottom,transparent,rgba(0,48,73,0.4))]"></div>
         </div>
 
-        <form onSubmit={handleScan} className="opacity-0 absolute">
-          <input ref={inputRef} type="text" value={scanValue} onChange={(e) => setScanValue(e.target.value)} autoFocus />
-        </form>
 
         {/* Persistent Scan Area */}
         <div className="text-center animate-fade-in py-8 px-10 glass border-surface-border rounded-[32px] w-full max-w-md z-10 relative bg-black/40 backdrop-blur-md">
