@@ -347,8 +347,8 @@ const Client = () => {
       <div className="w-full relative flex flex-col items-center justify-center p-8 overflow-hidden" style={{ height: '58%' }}>
         
         {/* Logo Watermark Background */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 opacity-[0.03]">
-          <img src={localLogo || logoUrl} alt="Watermark" className="w-[80vh] h-[80vh] object-contain grayscale" />
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 opacity-[0.03] p-8">
+          <img src={localLogo || logoUrl} alt="Watermark" className="max-w-full max-h-full w-auto h-auto object-contain grayscale" />
         </div>
 
         {/* Background Gradients */}
