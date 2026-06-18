@@ -1,0 +1,5 @@
+{
+  "appId": "com.cnhs.attendance",
+  "appName": "rfid-attendance",
+  "webDir": "dist"
+}
